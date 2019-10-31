@@ -9,7 +9,9 @@ create table projects
 	leader integer not null
 		constraint projects_employees_id_fk
 			references employees,
-	budget bigint
+	budget bigint,
+	constraint end_date_after_start_date
+		check (startdate < enddate)
 );
 
 alter table projects owner to postgres;

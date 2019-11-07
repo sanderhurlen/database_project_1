@@ -53,6 +53,23 @@ SELECT count_business_days( date('2019/11/2'), date('2019/11/3'));
 /*******************************************************/
 
 
+/**
+  Checks if an employee is already assigned to plan.
+ */
+ create or replace function isEmployeeAssignedToPlan(_employeeid INT, _planid int) returns boolean as $isInPlan$
+BEGIN
+    IF ((SELECT COUNT(planid) cnt FROM planemployee WHERE employeeid = _employeeid AND planid = _planid) > 0)
+    THEN
+        RETURN TRUE;
+    ELSE
+        RETURN FALSE;
+    END IF;
+END;
+$isInPlan$
+LANGUAGE plpgsql;
+
+/*******************************************************/
+
 
 
 /**
@@ -66,8 +83,11 @@ BEGIN
     _projectId = getProjectIdFromPlanId(new.planid);
     IF ((SELECT COUNT(projectid) cnt FROM projectcost WHERE projectid = _projectId) > 0)
     THEN
+        if (isEmployeeAssignedToPlan(new.employeeid, new.planid)) THEN RETURN null;
+        END IF;
+
         UPDATE projectcost SET totalcost = (totalcost + getTotalCostForEmployeeOverPeriod(new.employeeid, new.planid)) WHERE projectid = _projectId;
-            RETURN null;
+        RETURN NEW;
     ELSE
         INSERT INTO projectcost (projectid, totalcost)
     VALUES ((SELECT DISTINCT projectid
@@ -87,6 +107,9 @@ FOR EACH ROW
 EXECUTE PROCEDURE upsert_balance();
 
 INSERT INTO planemployee (planid, employeeid) VALUES (19, 25);
+INSERT INTO planemployee (planid, employeeid) VALUES (17, 25);
+INSERT INTO planemployee (planid, employeeid) VALUES (16, 25);
+INSERT INTO planemployee (planid, employeeid) VALUES (19, 20);
 /*******************************************************/
 
 

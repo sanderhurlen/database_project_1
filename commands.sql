@@ -54,7 +54,7 @@ SELECT count_business_days( date('2019/11/2'), date('2019/11/3'));
 
 
 /**
-  Checks if an employee is already assigned to plan.
+  Checks if an employee is already assigned to same plan.
  */
  create or replace function isEmployeeAssignedToPlan(_employeeid INT, _planid int) returns boolean as $isInPlan$
 BEGIN
@@ -70,7 +70,67 @@ LANGUAGE plpgsql;
 
 /*******************************************************/
 
+/**
+  Checks if an is busy in period.
+ */
+CREATE OR REPLACE FUNCTION isEmployeeBusy(_employeeid INT, _planid INT) RETURNS BOOLEAN AS
+$busy$
+DECLARE
+    _countColision INT;
+    _busy  BOOLEAN;
+    _startDate DATE;
+    _endDate DATE;
+BEGIN
+    CREATE TEMP TABLE dates
+    (
+        startDate DATE,
+        endDate   DATE
+    );
+    INSERT INTO dates (SELECT startDate, enddate FROM plans WHERE id = _planId);
 
+    IF ((SELECT count(*) FROM planemployee WHERE employeeid = _employeeid) = 0)
+    THEN
+        _busy = FALSE;
+    ELSEIF (isEmployeeAssignedToPlan(_employeeid, _planid))
+    THEN
+        _busy = TRUE;
+    ELSE
+        _endDate= (SELECT endDate FROM dates LIMIT 1);
+        _startDate = (SELECT startDate FROM dates LIMIT 1);
+
+        _countColision = (SELECT COUNT(*)
+                          FROM plans
+                                   INNER JOIN planemployee p ON plans.id = p.planid
+                          WHERE employeeid = _employeeid AND
+                                ( _startDate BETWEEN startdate AND enddate)
+                             OR (_endDate BETWEEN startdate AND enddate) OR
+                                (startdate BETWEEN _startDate AND _endDate)
+                             OR ( enddate BETWEEN _startDate AND _endDate));
+
+        IF (_countColision > 0) THEN
+            _busy = TRUE;
+        ELSE
+            _busy = FALSE;
+        END IF;
+    END IF;
+
+    DROP TABLE dates;
+    RETURN _busy;
+END;
+$busy$
+    LANGUAGE plpgsql;
+/* TRUE */
+SELECT isEmployeeBusy(25, 17);
+/* TRUE */
+SELECT isEmployeeBusy(25, 19);
+/* FALSE */
+SELECT isEmployeeBusy(25, 18);
+/* TRUE */
+SELECT isEmployeeBusy(25, 15);
+/* TRUE */
+SELECT isEmployeeBusy(25, 20);
+
+/*******************************************************/
 
 /**
   Updates projects total cost when trying to add a employee to a plan.
@@ -83,15 +143,20 @@ BEGIN
     _projectId = getProjectIdFromPlanId(new.planid);
     IF ((SELECT COUNT(projectid) cnt FROM projectcost WHERE projectid = _projectId) > 0)
     THEN
-        if (isEmployeeAssignedToPlan(new.employeeid, new.planid)) THEN RETURN null;
+        /* Check if an employee is assigned to a plan, if he/she is, return null (reject insert) */
+        if (isEmployeeBusy(new.employeeid, new.planid)) THEN RETURN null;
         END IF;
-
+        /* */
         UPDATE projectcost SET totalcost = (totalcost + getTotalCostForEmployeeOverPeriod(new.employeeid, new.planid)) WHERE projectid = _projectId;
         RETURN NEW;
     ELSE
+                /* Check if an employee is assigned to a plan, if he/she is, return null (reject insert) */
+        if (isEmployeeBusy(new.employeeid, new.planid)) THEN RETURN null;
+        END IF;
+
         INSERT INTO projectcost (projectid, totalcost)
-    VALUES ((SELECT DISTINCT projectid
-    FROM plans p WHERE p.id = new.planid), getTotalCostForEmployeeOverPeriod(new.employeeid, new.planid));
+        VALUES ((SELECT DISTINCT projectid
+        FROM plans p WHERE p.id = new.planid), getTotalCostForEmployeeOverPeriod(new.employeeid, new.planid));
     RETURN NEW;
     END IF;
 END;
@@ -106,10 +171,14 @@ BEFORE INSERT ON planemployee
 FOR EACH ROW
 EXECUTE PROCEDURE upsert_balance();
 
+/* FAIL */
 INSERT INTO planemployee (planid, employeeid) VALUES (19, 25);
+/* FAIL */
 INSERT INTO planemployee (planid, employeeid) VALUES (17, 25);
+/* FAIL */
 INSERT INTO planemployee (planid, employeeid) VALUES (16, 25);
-INSERT INTO planemployee (planid, employeeid) VALUES (19, 20);
+/* PASS */
+INSERT INTO planemployee (planid, employeeid) VALUES (18, 25);
 /*******************************************************/
 
 

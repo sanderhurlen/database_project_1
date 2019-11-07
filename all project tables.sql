@@ -133,3 +133,11 @@ INSERT INTO public.employees (id, name, hourlycost) VALUES (49, 'Dr. Missouri Mc
 INSERT INTO public.employees (id, name, hourlycost) VALUES (50, 'Dr. Owen Volkman II', 9);
 
 
+CREATE ROLE employee;
+GRANT CONNECT ON DATABASE postgres TO employee;
+GRANT USAGE ON SCHEMA public TO employee;
+GRANT SELECT ON TABLE plans, projects, projectcost TO employee;
+
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+REVOKE ALL ON DATABASE postgres FROM PUBLIC;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM employee;

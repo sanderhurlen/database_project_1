@@ -141,3 +141,6 @@ GRANT SELECT ON TABLE plans, projects, projectcost TO employee;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 REVOKE ALL ON DATABASE postgres FROM PUBLIC;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM employee;
+
+Create user employeeuser WITH PASSWORD 'windows';
+GRANT employee TO employeeUser;

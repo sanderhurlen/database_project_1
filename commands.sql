@@ -58,7 +58,7 @@ SELECT count_business_days( date('2019/11/2'), date('2019/11/3'));
  */
  create or replace function isEmployeeAssignedToPlan(_employeeid INT, _planid int) returns boolean as $isInPlan$
 BEGIN
-    IF ((SELECT COUNT(planid) cnt FROM planemployee WHERE employeeid = _employeeid AND planid = _planid) > 0)
+    IF ((SELECT COUNT(planid) cnt FROM plan_employee WHERE employeeid = _employeeid AND planid = _planid) > 0)
     THEN
         RETURN TRUE;
     ELSE
@@ -88,7 +88,7 @@ BEGIN
     );
     INSERT INTO dates (SELECT startDate, enddate FROM plans WHERE id = _planId);
 
-    IF ((SELECT count(*) FROM planemployee WHERE employeeid = _employeeid) = 0)
+    IF ((SELECT count(*) FROM plan_employee WHERE employeeid = _employeeid) = 0)
     THEN
         _busy = FALSE;
     ELSEIF (isEmployeeAssignedToPlan(_employeeid, _planid))
@@ -100,7 +100,7 @@ BEGIN
 
         _countColision = (SELECT COUNT(*)
                           FROM plans
-                                   INNER JOIN planemployee p ON plans.id = p.planid
+                                   INNER JOIN plan_employee p ON plans.id = p.planid
                           WHERE employeeid = _employeeid AND
                                 ( _startDate BETWEEN startdate AND enddate)
                              OR (_endDate BETWEEN startdate AND enddate) OR
@@ -167,23 +167,23 @@ LANGUAGE plpgsql;
   Binds trigger to update total cost
  */
 CREATE TRIGGER update_balance_on_inserting_transfer
-BEFORE INSERT ON planemployee
+BEFORE INSERT ON plan_employee
 FOR EACH ROW
 EXECUTE PROCEDURE upsert_balance();
 
 /* FAIL */
-INSERT INTO planemployee (planid, employeeid) VALUES (19, 25);
+INSERT INTO plan_employee (planid, employeeid) VALUES (19, 25);
 /* FAIL */
-INSERT INTO planemployee (planid, employeeid) VALUES (17, 25);
+INSERT INTO plan_employee (planid, employeeid) VALUES (17, 25);
 /* FAIL */
-INSERT INTO planemployee (planid, employeeid) VALUES (16, 25);
+INSERT INTO plan_employee (planid, employeeid) VALUES (16, 25);
 /* PASS */
-INSERT INTO planemployee (planid, employeeid) VALUES (18, 25);
+INSERT INTO plan_employee (planid, employeeid) VALUES (18, 25);
 /*******************************************************/
 
 
 SELECT SUM(hourlyCost)
-            FROM planEmployee pe, Employees e
+            FROM plan_employee pe, Employees e
             WHERE (pe.employeeid = e.id)
               AND (pe.planid = 19);
 
@@ -194,7 +194,7 @@ SELECT SUM(hourlyCost)
  */
 (select sum(hourlycost) * (enddate - startdate) as cost, pl.id as plansID
 from plans pl
-         inner join planemployee p on pl.id = p.planid
+         inner join plan_employee p on pl.id = p.planid
          inner join employees e on p.employeeid = e.id
 group by pl.id);
 

@@ -9,7 +9,6 @@ RETURN (SELECT DISTINCT projectid
 END; $$
 LANGUAGE PLPGSQL;
 
-SELECT getProjectIdFromPlanId(15);
 /*******************************************************/
 
 
@@ -33,7 +32,6 @@ BEGIN
 END; $$
 LANGUAGE PLPGSQL;
 
-SELECT getTotalCostForEmployeeOverPeriod(25, 19);
 /*******************************************************/
 
 
@@ -49,7 +47,6 @@ as $fbd$
     where extract('dow' from d) not in (0, 6)
 $fbd$ language sql;
 
-SELECT count_business_days( date('2019/11/2'), date('2019/11/3'));
 /*******************************************************/
 
 
@@ -119,16 +116,7 @@ BEGIN
 END;
 $busy$
     LANGUAGE plpgsql;
-/* TRUE */
-SELECT isEmployeeBusy(25, 17);
-/* TRUE */
-SELECT isEmployeeBusy(25, 19);
-/* FALSE */
-SELECT isEmployeeBusy(25, 18);
-/* TRUE */
-SELECT isEmployeeBusy(25, 15);
-/* TRUE */
-SELECT isEmployeeBusy(25, 20);
+
 
 /*******************************************************/
 
@@ -171,35 +159,6 @@ BEFORE INSERT ON plan_employee
 FOR EACH ROW
 EXECUTE PROCEDURE upsert_balance();
 
-/* FAIL */
-INSERT INTO plan_employee (planid, employeeid) VALUES (19, 25);
-/* FAIL */
-INSERT INTO plan_employee (planid, employeeid) VALUES (17, 25);
-/* FAIL */
-INSERT INTO plan_employee (planid, employeeid) VALUES (16, 25);
-/* PASS */
-INSERT INTO plan_employee (planid, employeeid) VALUES (18, 25);
-/*******************************************************/
-
-
-SELECT SUM(hourlyCost)
-            FROM plan_employee pe, Employees e
-            WHERE (pe.employeeid = e.id)
-              AND (pe.planid = 19);
-
-
-
-/**
-  Selects plan sums for a project
- */
-(select sum(hourlycost) * (enddate - startdate) as cost, pl.id as plansID
-from plans pl
-         inner join plan_employee p on pl.id = p.planid
-         inner join employees e on p.employeeid = e.id
-group by pl.id);
-
-
-
 CREATE OR REPLACE FUNCTION checkEndDateForProject() RETURNS trigger AS $trigger_bound$
 BEGIN
     IF new.enddate >= (SELECT DISTINCT pr1.enddate FROM projects pr1
@@ -218,5 +177,60 @@ BEFORE INSERT ON plans
 FOR EACH ROW
 EXECUTE PROCEDURE checkEndDateForProject();
 
+
+
+/** TESTING TESTING TESTING */
+
+
+/* TRUE */
+SELECT isEmployeeBusy(25, 17);
+/* TRUE */
+SELECT isEmployeeBusy(25, 19);
+/* FALSE */
+SELECT isEmployeeBusy(25, 18);
+/* TRUE */
+SELECT isEmployeeBusy(25, 15);
+/* TRUE */
+SELECT isEmployeeBusy(25, 20);
+
+
+
 INSERT INTO plans (projectid, activity, startdate, enddate)
 VALUES (15, 'Styremøte', date('2020-10-10'), date('2020-10-25'));
+
+
+
+/**
+  Selects plan sums for a project
+ */
+(select sum(hourlycost) * (enddate - startdate) as cost, pl.id as plansID
+from plans pl
+         inner join plan_employee p on pl.id = p.planid
+         inner join employees e on p.employeeid = e.id
+group by pl.id);
+
+
+
+/* FAIL */
+INSERT INTO plan_employee (planid, employeeid) VALUES (19, 25);
+/* FAIL */
+INSERT INTO plan_employee (planid, employeeid) VALUES (17, 25);
+/* FAIL */
+INSERT INTO plan_employee (planid, employeeid) VALUES (16, 25);
+/* PASS */
+INSERT INTO plan_employee (planid, employeeid) VALUES (18, 25);
+/*******************************************************/
+
+
+SELECT SUM(hourlyCost)
+            FROM plan_employee pe, Employees e
+            WHERE (pe.employeeid = e.id)
+              AND (pe.planid = 19);
+
+
+SELECT count_business_days( date('2019/11/2'), date('2019/11/3'));
+
+
+SELECT getProjectIdFromPlanId(15);
+
+SELECT getTotalCostForEmployeeOverPeriod(25, 19);

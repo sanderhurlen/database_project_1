@@ -111,11 +111,11 @@ BEGIN
         _leaderCost = gettotalcostforemployeeoverperiod(new.leader, new.startdate, new.enddate);
     IF (isLeaderBusy(new.leader, new.startdate, new.enddate))
     THEN
-        RAISE EXCEPTION ERROR_IN_ASSIGNMENT ;
+        RAISE EXCEPTION 'This leader is busy in this time period.';
     ELSE
         IF (_leaderCost > new.budget)
         THEN
-            RAISE EXCEPTION ERROR_IN_ASSIGNMENT ;
+            RAISE EXCEPTION 'This leaders cost violates this projects budget.';
         END IF;
         RETURN NEW;
     END IF;

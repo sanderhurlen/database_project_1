@@ -141,13 +141,26 @@ $busy$
  */
 CREATE OR REPLACE FUNCTION upsert_balance() RETURNS trigger AS $trigger_bound$
     DECLARE _projectId INT;
+
 BEGIN
+    CREATE TEMP TABLE planDates
+    (
+        startDate DATE,
+        endDate   DATE
+    );
     _projectId = getProjectIdFromPlanId(new.planid);
+
+    INSERT INTO planDates (SELECT startDate,endDate FROM plans INNER JOIN plan_employee pe ON plans.id = pe.planid WHERE id = new.planid);
+
     IF ((SELECT COUNT(projectid) cnt FROM projectcost WHERE projectid = _projectId) > 0)
     THEN
         /* Check if an employee is assigned to a plan, if he/she is, return null (reject insert) */
-        if (isEmployeeBusy(new.employeeid, new.planid)) THEN RETURN null;
+        if (isEmployeeBusy(new.employeeid, new.planid)) THEN
+            RAISE EXCEPTION 'This employee is busy on a project plan.';
         END IF;
+        if (isleaderbusy(new.employeeid, (SELECT startDate FROM planDates LIMIT 1),(SELECT endDate FROM planDates LIMIT 1))) THEN
+            RAISE EXCEPTION 'This employee is busy as a project leader.';
+        END IF ;
         /* */
         UPDATE projectcost SET totalcost = (totalcost + getTotalCostForEmployeeOverPeriod(new.employeeid, new.planid)) WHERE projectid = _projectId;
         RETURN NEW;
@@ -159,7 +172,7 @@ BEGIN
         INSERT INTO projectcost (projectid, totalcost)
         VALUES ((SELECT DISTINCT projectid
         FROM plans p WHERE p.id = new.planid), getTotalCostForEmployeeOverPeriod(new.employeeid, new.planid));
-    RETURN NEW;
+        RETURN NEW;
     END IF;
 END;
 $trigger_bound$
@@ -179,7 +192,7 @@ BEGIN
         INNER JOIN plans pl1 ON pl1.projectid = pr1.id
         WHERE pr1.id = new.projectid)
     THEN
-        RAISE EXCEPTION NUMERIC_VALUE_OUT_OF_RANGE;
+        RAISE EXCEPTION 'Plan end date is after project end date.';
     END IF;
     RETURN NEW;
 END;

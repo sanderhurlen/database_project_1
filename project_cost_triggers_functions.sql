@@ -21,19 +21,33 @@ CREATE OR REPLACE FUNCTION getTotalCostForEmployeeOverPeriod(employeeId INTEGER,
     DECLARE _totalWorkingDays BIGINT;
 BEGIN
         CREATE TEMP TABLE dates (startDate date, endDate date);
-
-        _lengthWorkingDay = 7.5;
         INSERT INTO dates (SELECT startDate, enddate FROM plans WHERE id = planId);
-        _hourlyCost = (SELECT hourlycost wr FROM employees WHERE id = employeeId);
-        _totalWorkingDays = count_business_days((SELECT startDate FROM dates LIMIT 1), (SELECT endDate FROM dates LIMIT 1));
         DROP TABLE dates;
-        RETURN _totalWorkingDays * _lengthWorkingDay * _hourlyCost;
+        RETURN gettotalcostforemployeeoverperiod(employeeId, (SELECT startDate FROM dates LIMIT 1),(SELECT endDate FROM dates LIMIT 1));
 
 END; $$
 LANGUAGE PLPGSQL;
 
 /*******************************************************/
 
+
+/**
+  Returns the total cost of an employee over a time period.
+ */
+CREATE OR REPLACE FUNCTION getTotalCostForEmployeeOverPeriod(employeeId INTEGER, _startDate date, _endDate date) RETURNS INT AS $$
+    DECLARE _hourlyCost FLOAT;
+    DECLARE _lengthWorkingDay FLOAT;
+    DECLARE _totalWorkingDays BIGINT;
+BEGIN
+        _lengthWorkingDay = 7.5;
+        _hourlyCost = (SELECT hourlycost wr FROM employees WHERE id = employeeId);
+        _totalWorkingDays = count_business_days(_startDate, _endDate);
+        RETURN _totalWorkingDays * _lengthWorkingDay * _hourlyCost;
+
+END; $$
+LANGUAGE PLPGSQL;
+
+/*******************************************************/
 
 /**
   Finds week days of date range

@@ -56,28 +56,20 @@ $$
 /**
   Checks if a leader is busy in period.
  */
-CREATE OR REPLACE FUNCTION isLeaderBusy(_leaderId INT, _projectId INT) RETURNS BOOLEAN AS
+CREATE OR REPLACE FUNCTION isLeaderBusy(_leaderId INT, _startDateNew date, _endDateNew date) RETURNS BOOLEAN AS
 $busy$
 DECLARE
     _busy      BOOLEAN = FALSE;
     _startDate DATE;
     _endDate   DATE;
 BEGIN
-    CREATE TEMP TABLE projectDates
-    (
-        startDate DATE,
-        endDate   DATE
-    );
-
-
-    INSERT INTO projectDates (SELECT startDate, endDate FROM projects WHERE id = _projectId);
 
     IF (isPersonALeader(_leaderId))
     THEN
         FOR _startDate, _endDate IN (SELECT startDate, endDate FROM projects WHERE leader = _leaderId)
             LOOP
-                IF (isDatesOverlapping((SELECT startDate FROM projectDates LIMIT 1),
-                                       (SELECT endDate FROM projectDates LIMIT 1), _startDate, _endDate))
+                IF (isDatesOverlapping(_startDateNew,
+                                       _endDateNew, _startDate, _endDate))
                 THEN
                     _busy = TRUE;
                     EXIT;
@@ -91,44 +83,74 @@ BEGIN
                                               INNER JOIN employees e ON e.id = pe.employeeid
                                      WHERE e.id = _leaderId)
             LOOP
-                IF (isDatesOverlapping((SELECT startDate FROM projectDates LIMIT 1),
-                                       (SELECT endDate FROM projectDates LIMIT 1), _startDate, _endDate))
+                IF (isDatesOverlapping(_startDateNew,
+                                       _endDateNew, _startDate, _endDate))
                 THEN
                     _busy = TRUE;
                     EXIT;
                 END IF;
             END LOOP;
     END IF;
-
-    DROP TABLE projectDates;
     RETURN _busy;
 END;
 $busy$
     LANGUAGE plpgsql;
 
-SELECT isLeaderBusy(49, 4);
+SELECT isLeaderBusy(19, date('2016-11-19'),date('2016-11-30'));
 
 
 /*******************************************************/
 /*
     Adds a lea
 */
-CREATE OR REPLACE FUNCTION addLeaderCostToProjectCost() RETURNS TRIGGER AS
+CREATE OR REPLACE FUNCTION validateNewLeader() RETURNS TRIGGER AS
 $leadercost$
+    DECLARE
+        _leaderCost INT;
 BEGIN
-    IF (isLeaderBusy(new.leader, NEW.id))
+        _leaderCost = gettotalcostforemployeeoverperiod(new.leader, new.startdate, new.enddate);
+    IF (isLeaderBusy(new.leader, new.startdate, new.enddate))
     THEN
         RAISE EXCEPTION ERROR_IN_ASSIGNMENT ;
     ELSE
+        IF (_leaderCost > new.budget)
+        THEN
+            RAISE EXCEPTION ERROR_IN_ASSIGNMENT ;
+        END IF;
         RETURN NEW;
     END IF;
+END;
+$leadercost$
+
+    LANGUAGE plpgsql;
+
+/*******************************************************/
+/*
+    Adds a lea
+*/
+CREATE OR REPLACE FUNCTION addProjectLeaderCost() RETURNS TRIGGER AS
+$leadercost$
+    DECLARE
+        _leaderCost INT;
+BEGIN
+        _leaderCost = gettotalcostforemployeeoverperiod(new.leader, new.startdate, new.enddate);
+        INSERT INTO projectcost (projectid, totalcost) VALUES (new.id, _leaderCost);
+        RETURN NEW;
 END;
 $leadercost$
     LANGUAGE plpgsql;
 
 
-CREATE TRIGGER addLeaderCostToProjectCost
-    BEFORE INSERT
+
+CREATE TRIGGER validateNewLeader
+    BEFORE INSERT OR UPDATE
     ON projects
     FOR EACH ROW
-EXECUTE PROCEDURE addLeaderCostToProjectCost();
+EXECUTE PROCEDURE validateNewLeader();
+
+
+CREATE TRIGGER addLeaderCostToProjectCost
+    AFTER INSERT OR UPDATE
+    ON projects
+    FOR EACH ROW
+EXECUTE PROCEDURE addProjectLeaderCost();

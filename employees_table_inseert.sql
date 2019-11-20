@@ -4,7 +4,7 @@ CREATE TABLE employees
         CONSTRAINT employees_pk
             PRIMARY KEY,
     name       VARCHAR(200)     NOT NULL,
-    hourlycost DOUBLE PRECISION NOT NULL
+    hourlycost positive_double DEFAULT 0 NOT NULL
 );
 
 ALTER TABLE employees

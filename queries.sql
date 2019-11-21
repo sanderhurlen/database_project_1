@@ -1,5 +1,9 @@
 --  •	How many employees of for a project titled "A" are involved in its plan “B”?
-
+SELECT p.name, pl.activity, COUNT(pe.employeeid) FROM plan_employee pe
+INNER JOIN plans pl ON pe.planid = pl.id
+INNER JOIN projects p ON p.id=pl.projectid
+WHERE p.id = 1 AND pl.activity = 'Testing'
+GROUP BY p.name, pl.activity, pe.planid;
 
 
 -- # •	Retrieve the names of plans made for project “A” with least cost.

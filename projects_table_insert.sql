@@ -9,7 +9,7 @@ CREATE TABLE projects
     leader    INTEGER      NOT NULL
         CONSTRAINT projects_employees_id_fk
             REFERENCES employees,
-    budget    BIGINT,
+    budget positive_bigint DEFAULT 0 NOT NULL,
     CONSTRAINT end_date_after_start_date
         CHECK (startdate < enddate)
 );

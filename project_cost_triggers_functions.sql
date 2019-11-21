@@ -1,13 +1,15 @@
-
 /**
   Returns the project id from a given plan id
  */
-CREATE OR REPLACE FUNCTION getProjectIdFromPlanId(planId integer) RETURNS integer AS $$
+CREATE OR REPLACE FUNCTION getProjectIdFromPlanId(planId INTEGER) RETURNS INTEGER AS
+$$
 BEGIN
-RETURN (SELECT DISTINCT projectid
-    FROM plans p WHERE p.id = planId);
-END; $$
-LANGUAGE PLPGSQL;
+    RETURN (SELECT DISTINCT projectid
+            FROM plans p
+            WHERE p.id = planId);
+END;
+$$
+    LANGUAGE PLPGSQL;
 
 /*******************************************************/
 
@@ -15,37 +17,62 @@ LANGUAGE PLPGSQL;
 /**
   Returns the total cost of an employee over a time period.
  */
-CREATE OR REPLACE FUNCTION getTotalCostForEmployeeOverPeriod(employeeId INTEGER, planid INTEGER) RETURNS INT AS $$
-    DECLARE _hourlyCost FLOAT;
-    DECLARE _lengthWorkingDay FLOAT;
-    DECLARE _totalWorkingDays BIGINT;
+CREATE OR REPLACE FUNCTION getTotalCostForEmployeeOverPeriod(employeeId INTEGER, planid INTEGER) RETURNS INT AS
+$$
+DECLARE
+    _cost INT;
 BEGIN
-        CREATE TEMP TABLE dates (startDate date, endDate date);
+    CREATE TEMP TABLE dates
+    (
+        startDate DATE,
+        endDate   DATE
+    );
+    INSERT INTO dates (SELECT startDate, enddate FROM plans WHERE id = planId);
+    _cost = gettotalcostforemployeeoverperiod(employeeId, (SELECT startDate FROM dates LIMIT 1),
+                                              (SELECT endDate FROM dates LIMIT 1));
+    DROP TABLE dates;
+    RETURN _cost;
 
-        _lengthWorkingDay = 7.5;
-        INSERT INTO dates (SELECT startDate, enddate FROM plans WHERE id = planId);
-        _hourlyCost = (SELECT hourlycost wr FROM employees WHERE id = employeeId);
-        _totalWorkingDays = count_business_days((SELECT startDate FROM dates LIMIT 1), (SELECT endDate FROM dates LIMIT 1));
-        DROP TABLE dates;
-        RETURN _totalWorkingDays * _lengthWorkingDay * _hourlyCost;
-
-END; $$
-LANGUAGE PLPGSQL;
+END;
+$$
+    LANGUAGE PLPGSQL;
 
 /*******************************************************/
 
 
 /**
+  Returns the total cost of an employee over a time period.
+ */
+CREATE OR REPLACE FUNCTION getTotalCostForEmployeeOverPeriod(employeeId INTEGER, _startDate DATE, _endDate DATE) RETURNS INT AS
+$$
+DECLARE
+    _hourlyCost               FLOAT;
+    DECLARE _lengthWorkingDay FLOAT;
+    DECLARE _totalWorkingDays BIGINT;
+BEGIN
+    _lengthWorkingDay = 7.5;
+    _hourlyCost = (SELECT hourlycost wr FROM employees WHERE id = employeeId);
+    _totalWorkingDays = count_business_days(_startDate, _endDate);
+    RETURN _totalWorkingDays * _lengthWorkingDay * _hourlyCost;
+
+END;
+$$
+    LANGUAGE PLPGSQL;
+
+/*******************************************************/
+
+/**
   Finds week days of date range
   Found: https://dba.stackexchange.com/a/247130
  */
-create or replace function count_business_days(from_date date, to_date date)
-returns bigint
-as $fbd$
-    select count(d::date) as d
-    from generate_series(from_date, to_date, '1 day'::interval) d
-    where extract('dow' from d) not in (0, 6)
-$fbd$ language sql;
+CREATE OR REPLACE FUNCTION count_business_days(from_date DATE, to_date DATE)
+    RETURNS BIGINT
+AS
+$fbd$
+SELECT count(d::DATE) AS d
+FROM generate_series(from_date, to_date, '1 day'::INTERVAL) d
+WHERE extract('dow' FROM d) NOT IN (0, 6)
+$fbd$ LANGUAGE SQL;
 
 /*******************************************************/
 
@@ -53,7 +80,8 @@ $fbd$ language sql;
 /**
   Checks if an employee is already assigned to same plan.
  */
- create or replace function isEmployeeAssignedToPlan(_employeeid INT, _planid int) returns boolean as $isInPlan$
+CREATE OR REPLACE FUNCTION isEmployeeAssignedToPlan(_employeeid INT, _planid INT) RETURNS BOOLEAN AS
+$isInPlan$
 BEGIN
     IF ((SELECT COUNT(planid) cnt FROM plan_employee WHERE employeeid = _employeeid AND planid = _planid) > 0)
     THEN
@@ -63,7 +91,7 @@ BEGIN
     END IF;
 END;
 $isInPlan$
-LANGUAGE plpgsql;
+    LANGUAGE plpgsql;
 
 /*******************************************************/
 
@@ -74,9 +102,9 @@ CREATE OR REPLACE FUNCTION isEmployeeBusy(_employeeid INT, _planid INT) RETURNS 
 $busy$
 DECLARE
     _countColision INT;
-    _busy  BOOLEAN;
-    _startDate DATE;
-    _endDate DATE;
+    _busy          BOOLEAN;
+    _startDate     DATE;
+    _endDate       DATE;
 BEGIN
     CREATE TEMP TABLE dates
     (
@@ -92,17 +120,17 @@ BEGIN
     THEN
         _busy = TRUE;
     ELSE
-        _endDate= (SELECT endDate FROM dates LIMIT 1);
+        _endDate = (SELECT endDate FROM dates LIMIT 1);
         _startDate = (SELECT startDate FROM dates LIMIT 1);
 
         _countColision = (SELECT COUNT(*)
                           FROM plans
                                    INNER JOIN plan_employee p ON plans.id = p.planid
                           WHERE employeeid = _employeeid AND
-                                ( _startDate BETWEEN startdate AND enddate)
-                             OR (_endDate BETWEEN startdate AND enddate) OR
-                                (startdate BETWEEN _startDate AND _endDate)
-                             OR ( enddate BETWEEN _startDate AND _endDate));
+                                (_startDate BETWEEN startdate AND enddate)
+                             OR (_endDate BETWEEN startdate AND enddate)
+                             OR (startdate BETWEEN _startDate AND _endDate)
+                             OR (enddate BETWEEN _startDate AND _endDate));
 
         IF (_countColision > 0) THEN
             _busy = TRUE;
@@ -125,56 +153,84 @@ $busy$
   If the total cost is higher then the projects budget, the employee will not be assigned to the plan.
   Else, add the user and update the total cost for the project.
  */
-CREATE OR REPLACE FUNCTION upsert_balance() RETURNS trigger AS $trigger_bound$
-    DECLARE _projectId INT;
+CREATE OR REPLACE FUNCTION upsert_balance() RETURNS TRIGGER AS
+$trigger_bound$
+DECLARE
+    _projectId INT;
+
 BEGIN
+    DROP TABLE IF EXISTS plandates;
+    CREATE TEMP TABLE planDates
+    (
+        startDate DATE,
+        endDate   DATE
+    );
     _projectId = getProjectIdFromPlanId(new.planid);
+
+    INSERT INTO planDates (SELECT startDate, endDate
+                           FROM plans
+                                    INNER JOIN plan_employee pe ON plans.id = pe.planid
+                           WHERE id = new.planid);
+
     IF ((SELECT COUNT(projectid) cnt FROM projectcost WHERE projectid = _projectId) > 0)
     THEN
         /* Check if an employee is assigned to a plan, if he/she is, return null (reject insert) */
-        if (isEmployeeBusy(new.employeeid, new.planid)) THEN RETURN null;
+        IF (isEmployeeBusy(new.employeeid, new.planid)) THEN
+            RAISE EXCEPTION 'This employee is busy on a project plan.';
+        END IF;
+        IF (isleaderbusy(new.employeeid, (SELECT startDate FROM planDates LIMIT 1),
+                         (SELECT endDate FROM planDates LIMIT 1))) THEN
+            RAISE EXCEPTION 'This employee is busy as a project leader.';
         END IF;
         /* */
-        UPDATE projectcost SET totalcost = (totalcost + getTotalCostForEmployeeOverPeriod(new.employeeid, new.planid)) WHERE projectid = _projectId;
+        UPDATE projectcost
+        SET totalcost = (totalcost + getTotalCostForEmployeeOverPeriod(new.employeeid, new.planid))
+        WHERE projectid = _projectId;
         RETURN NEW;
     ELSE
-                /* Check if an employee is assigned to a plan, if he/she is, return null (reject insert) */
-        if (isEmployeeBusy(new.employeeid, new.planid)) THEN RETURN null;
+        /* Check if an employee is assigned to a plan, if he/she is, return null (reject insert) */
+        IF (isEmployeeBusy(new.employeeid, new.planid)) THEN
+            RETURN NULL;
         END IF;
 
         INSERT INTO projectcost (projectid, totalcost)
         VALUES ((SELECT DISTINCT projectid
-        FROM plans p WHERE p.id = new.planid), getTotalCostForEmployeeOverPeriod(new.employeeid, new.planid));
-    RETURN NEW;
+                 FROM plans p
+                 WHERE p.id = new.planid), getTotalCostForEmployeeOverPeriod(new.employeeid, new.planid));
+        RETURN NEW;
     END IF;
 END;
 $trigger_bound$
-LANGUAGE plpgsql;
+    LANGUAGE plpgsql;
 
 /**
   Binds trigger to update total cost
  */
 CREATE TRIGGER update_balance_on_inserting_transfer
-BEFORE INSERT ON plan_employee
-FOR EACH ROW
+    BEFORE INSERT
+    ON plan_employee
+    FOR EACH ROW
 EXECUTE PROCEDURE upsert_balance();
 
-CREATE OR REPLACE FUNCTION checkEndDateForProject() RETURNS trigger AS $trigger_bound$
+CREATE OR REPLACE FUNCTION checkEndDateForProject() RETURNS TRIGGER AS
+$trigger_bound$
 BEGIN
-    IF new.enddate >= (SELECT DISTINCT pr1.enddate FROM projects pr1
-        INNER JOIN plans pl1 ON pl1.projectid = pr1.id
-        WHERE pr1.id = new.projectid)
+    IF new.enddate >= (SELECT DISTINCT pr1.enddate
+                       FROM projects pr1
+                                INNER JOIN plans pl1 ON pl1.projectid = pr1.id
+                       WHERE pr1.id = new.projectid)
     THEN
-        RAISE EXCEPTION NUMERIC_VALUE_OUT_OF_RANGE;
+        RAISE EXCEPTION 'Plan end date is after project end date.';
     END IF;
     RETURN NEW;
 END;
 $trigger_bound$
-LANGUAGE plpgsql;
+    LANGUAGE plpgsql;
 
 CREATE TRIGGER checkEndDateForProject
-BEFORE INSERT ON plans
-FOR EACH ROW
+    BEFORE INSERT
+    ON plans
+    FOR EACH ROW
 EXECUTE PROCEDURE checkEndDateForProject();
 
 
@@ -199,36 +255,39 @@ INSERT INTO plans (projectid, activity, startdate, enddate)
 VALUES (15, 'Styremøte', date('2020-10-10'), date('2020-10-25'));
 
 
-
 /**
   Selects plan sums for a project
  */
-(select sum(hourlycost) * (enddate - startdate) as cost, pl.id as plansID
-from plans pl
-         inner join plan_employee p on pl.id = p.planid
-         inner join employees e on p.employeeid = e.id
-group by pl.id);
-
+(SELECT sum(hourlycost) * (enddate - startdate) AS cost, pl.id AS plansID
+ FROM plans pl
+          INNER JOIN plan_employee p ON pl.id = p.planid
+          INNER JOIN employees e ON p.employeeid = e.id
+ GROUP BY pl.id);
 
 
 /* FAIL */
-INSERT INTO plan_employee (planid, employeeid) VALUES (19, 25);
+INSERT INTO plan_employee (planid, employeeid)
+VALUES (19, 25);
 /* FAIL */
-INSERT INTO plan_employee (planid, employeeid) VALUES (17, 25);
+INSERT INTO plan_employee (planid, employeeid)
+VALUES (17, 25);
 /* FAIL */
-INSERT INTO plan_employee (planid, employeeid) VALUES (16, 25);
+INSERT INTO plan_employee (planid, employeeid)
+VALUES (16, 25);
 /* PASS */
-INSERT INTO plan_employee (planid, employeeid) VALUES (18, 25);
+INSERT INTO plan_employee (planid, employeeid)
+VALUES (18, 25);
 /*******************************************************/
 
 
 SELECT SUM(hourlyCost)
-            FROM plan_employee pe, Employees e
-            WHERE (pe.employeeid = e.id)
-              AND (pe.planid = 19);
+FROM plan_employee pe,
+     Employees e
+WHERE (pe.employeeid = e.id)
+  AND (pe.planid = 19);
 
 
-SELECT count_business_days( date('2019/11/2'), date('2019/11/3'));
+SELECT count_business_days(date('2019/11/2'), date('2019/11/3'));
 
 
 SELECT getProjectIdFromPlanId(15);
